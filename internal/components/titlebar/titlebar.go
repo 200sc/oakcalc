@@ -87,6 +87,10 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 			hdr.draggingStartPos = floatgeom.Point2{float64(x), float64(y)}
 			return 0
 		}),
+		// Q: Why not mouse.Drag?
+		// A: mouse.Drag is only triggered for on-screen mouse events. If the mouse
+		//    falls out of the window, as it likely will if you drag the window up,
+		//    the window will freeze until you bring the mouse cursor back into the window.
 		btn.Binding(event.Enter, func(_ event.CID, ev interface{}) int {
 			if hdr.draggingWindow {
 				x, y, err := oak.GetCursorPosition()
