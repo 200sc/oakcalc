@@ -108,7 +108,12 @@ func (disp *arithmeticDisplay) Add(t arith.Token) {
 	defer disp.mu.Unlock()
 	// special cases
 	if t.Op != nil && *t.Op == arith.OpEquals {
-		fmt.Println(arith.Eval(disp.currentOperation))
+		tree, err := arith.Parse(disp.currentOperation)
+		if err == nil {
+			fmt.Println(tree.Eval())
+		} else {
+			fmt.Println(err)
+		}
 		disp.currentOperation = []arith.Token{}
 		return
 	}

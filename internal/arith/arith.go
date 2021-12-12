@@ -1,6 +1,10 @@
 package arith
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 type Token struct {
 	// One of:
@@ -19,44 +23,85 @@ const (
 	OpBackspace Op = "<-"
 )
 
-func Eval(tokens []Token) (int64, error) {
-	return 0, fmt.Errorf("unimplemented")
+type Tree struct {
+	Token
+	Left  *Tree
+	Right *Tree
 }
 
-// 	if len(tokens) == 0 {
-// 		return 0, nil
-// 	}
-// 	tk := tokens[0]
-// 	// special case: - as negative sign
-// 	if tk.Op != nil && *tk.Op == OpMinus {
-// 		// TODO: tail recursion
-// 		i, err := Eval(tokens[1:])
-// 		if err != nil {
-// 			return 0, err
-// 		}
-// 		return i * -1, nil
-// 	}
-// 	if tk.Op != nil {
-// 		return 0, fmt.Errorf("expression began with binary operator")
-// 	}
-// 	return evalWithLHS(*tk.Number, tokens[1:])
-// }
+func (t Tree) Eval() int64 {
+	// assumes a well formed tree
 
-// func evalWithLHS(lhs int64, tokens []Token) (int64, error) {
-// 	if len(tokens) == 0 {
-// 		return lhs, nil
-// 	}
-// 	tk := tokens[0]
-// 	i := 1
-// 	for tk.Number != nil && i < len(tokens); i++ {
-// 		lhs *= 10
-// 		lhs += *tk.Number
-// 		tk = tokens[i]
-// 	}
-// 	if i == len(tokens) {
-// 		return lhs, nil
-// 	}
-// 	i++
-// 	tk = tokens[i]
-// 	switch
-// }
+	if t.Left != nil && t.Right != nil {
+		lhs := t.Left.Eval()
+		rhs := t.Right.Eval()
+		switch *t.Op {
+		case OpDivide:
+			// todo: divide by zero detection
+			return lhs / rhs
+		case OpMultiply:
+			return lhs * rhs
+		case OpMinus:
+			return lhs - rhs
+		case OpPlus:
+			return lhs + rhs
+		}
+		return 0
+	}
+	return *t.Number
+}
+
+func (t Tree) Pretty() string {
+	sb := &strings.Builder{}
+	t.pretty(sb)
+	return sb.String()
+}
+
+func (t Tree) pretty(sb *strings.Builder) {
+	if t.Left != nil {
+		t.Left.pretty(sb)
+		sb.WriteString(" ")
+	}
+	if t.Token.Number != nil {
+		sb.WriteString(strconv.FormatInt(*t.Token.Number, 10))
+	}
+	if t.Token.Op != nil {
+		sb.WriteString(string(*t.Token.Op))
+	}
+	if t.Right != nil {
+		sb.WriteString(" ")
+		t.Right.pretty(sb)
+	}
+}
+
+func Parse(tokens []Token) (*Tree, error) {
+	tree := &Tree{}
+	if len(tokens) == 0 {
+		return tree, nil
+	}
+	tree.Token = tokens[0]
+	i := 1
+	for {
+		if i >= len(tokens) {
+			return tree, nil
+		}
+		tk := tokens[i]
+		if tk.Op != nil {
+			// Assuming binary op
+			if i+1 >= len(tokens) {
+				return nil, fmt.Errorf("unpaired binary operator")
+			}
+			left := tree
+			right, err := Parse(tokens[i+1:])
+			if err != nil {
+				return nil, err
+			}
+			tree = &Tree{
+				Token: tk,
+				Left:  left,
+				Right: right,
+			}
+		}
+		i++
+	}
+}
