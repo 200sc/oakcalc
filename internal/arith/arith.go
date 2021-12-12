@@ -12,6 +12,19 @@ type Token struct {
 	Op     *Op
 }
 
+func (t Token) Copy() Token {
+	t2 := Token{}
+	if t.Number != nil {
+		t2.Number = new(int64)
+		*t2.Number = *t.Number
+	}
+	if t.Op != nil {
+		t2.Op = new(Op)
+		*t2.Op = *t.Op
+	}
+	return t2
+}
+
 type Op string
 
 const (
