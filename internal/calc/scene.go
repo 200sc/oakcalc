@@ -14,7 +14,7 @@ func Scene() scene.Scene {
 			titlebar.New(ctx,
 				titlebar.WithColor(colornames.Darkgreen),
 				titlebar.WithHeight(32),
-				titlebar.WithLayers([]int{0, 10}),
+				titlebar.WithLayers([]int{10}),
 				titlebar.WithTitle("OakCalc"),
 			)
 		},

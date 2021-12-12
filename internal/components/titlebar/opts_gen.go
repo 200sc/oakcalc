@@ -13,6 +13,20 @@ func WithColor(v color.Color) Option {
 	}
 }
 
+func WithHighlightColor(v color.Color) Option {
+	return func(s Constructor) Constructor {
+		s.HighlightColor = v
+		return s
+	}
+}
+
+func WithMouseDownColor(v color.Color) Option {
+	return func(s Constructor) Constructor {
+		s.MouseDownColor = v
+		return s
+	}
+}
+
 func WithHeight(v float64) Option {
 	return func(s Constructor) Constructor {
 		s.Height = v
@@ -48,9 +62,23 @@ func WithTitleXOffset(v int) Option {
 	}
 }
 
+func WithTitleTextColor(v color.Color) Option {
+	return func(s Constructor) Constructor {
+		s.TitleTextColor = v
+		return s
+	}
+}
+
 func WithButtons(v []Button) Option {
 	return func(s Constructor) Constructor {
 		s.Buttons = v
+		return s
+	}
+}
+
+func WithButtonWidth(v float64) Option {
+	return func(s Constructor) Constructor {
+		s.ButtonWidth = v
 		return s
 	}
 }
