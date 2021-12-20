@@ -1,7 +1,6 @@
 package calc
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +31,7 @@ func Scene() scene.Scene {
 			var disp arithmeticDisplay
 			disp.ctx = ctx
 			disp.fnt = render.DefaultFont()
+			disp.fnt.Fallbacks = loadFallbackFonts(10)
 			disp.current = disp.fnt.NewText("", 400, 430)
 			ctx.DrawStack.Draw(disp.current, 9)
 
@@ -53,6 +53,7 @@ func Scene() scene.Scene {
 					{Number: i64p(2)},
 					{Number: i64p(3)},
 					{Op: opP(arith.OpMinus)},
+					{Op: opP(arith.OpSquareRoot)},
 				}, {
 					{Op: opP(arith.OpBackspace)},
 					{Number: i64p(0)},
@@ -75,6 +76,8 @@ func Scene() scene.Scene {
 				fg.Size = 25
 				return fg
 			})
+
+			btnFnt.Fallbacks = loadFallbackFonts(25)
 			for _, tokenRow := range tokens {
 				for _, token := range tokenRow {
 					token := token
@@ -171,17 +174,12 @@ func (disp *arithmeticDisplay) Add(t arith.Token) {
 				Number: i64p(0),
 			})
 		}
-		tree, _, err := arith.Parse(disp.currentOperation)
-		// fmt.Println(pretty)
+		tree, err := arith.Parse(disp.currentOperation)
 		if err == nil {
 			result := arith.Eval(tree)
 			pretty := arith.Pretty(tree)
-			fmt.Println(pretty)
-			fmt.Println(result)
 			disp.AddToHistory(pretty)
 			disp.AddToHistory(" = " + strconv.FormatInt(result, 10))
-		} else {
-			fmt.Println(err)
 		}
 		disp.currentOperation = []arith.Token{}
 		disp.current.SetString("")

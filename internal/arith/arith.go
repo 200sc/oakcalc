@@ -3,6 +3,7 @@ package arith
 import (
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 )
 
@@ -36,7 +37,31 @@ const (
 	OpBackspace  Op = "<-"
 	OpOpenParen  Op = "("
 	OpCloseParen Op = ")"
+	OpSquareRoot Op = "√"
 )
+
+var (
+	unaryOps = map[Op]struct{}{
+		OpSquareRoot: {},
+		OpMinus:      {},
+	}
+	binaryOps = map[Op]struct{}{
+		OpPlus:     {},
+		OpDivide:   {},
+		OpMultiply: {},
+		OpMinus:    {},
+	}
+)
+
+func (o Op) IsBinary() bool {
+	_, ok := binaryOps[o]
+	return ok
+}
+
+func (o Op) IsUnary() bool {
+	_, ok := unaryOps[o]
+	return ok
+}
 
 type Node interface {
 	isNode()
@@ -89,6 +114,9 @@ func Eval(n Node) int64 {
 	case UnaryOpNode:
 		inner := Eval(v.Inner)
 		switch v.Op {
+		case OpSquareRoot:
+			//  TODO: math.BigFloat
+			return int64(math.Sqrt(float64(inner)))
 		case OpMinus:
 			return inner * -1
 		default:
@@ -118,77 +146,62 @@ func Pretty(n Node) string {
 	}
 }
 
-func Parse(tokens []Token) (tree Node, read int, err error) {
+func Parse(tokens []Token) (tree Node, err error) {
 	var lhs Node
 	if len(tokens) == 0 {
-		return nil, 0, io.EOF
+		return nil, io.EOF
 	}
 	i := 0
 	thisToken := tokens[i]
 	if len(tokens) == 1 {
 		if thisToken.Number == nil {
-			return nil, 0, fmt.Errorf("expected number as final token")
+			return nil, fmt.Errorf("expected number as final token")
 		}
 		lhs = NumberNode(*thisToken.Number)
-		return lhs, 1, nil
+		return lhs, nil
 	}
 	switch {
 	case thisToken.Number != nil: // eq = number
 		lhs = NumberNode(*thisToken.Number)
-	case thisToken.Op != nil && *thisToken.Op == OpMinus:
+	case thisToken.Op != nil && thisToken.Op.IsUnary():
 		i++
 		nextToken := tokens[i]
 		// if we call parse, how do we stop parse from consuming the entire rest of the tree?
 		var inner Node
 		switch {
 		// TODO -()
+		case nextToken.Op != nil && *nextToken.Op == OpOpenParen:
+			i++
+			inner, i, err = parseParenExpr(i, tokens)
+			if err != nil {
+				return nil, err
+			}
 		case nextToken.Number != nil:
 			inner = NumberNode(*nextToken.Number)
 		default:
-			return nil, 0, fmt.Errorf("expected number after -")
+			return nil, fmt.Errorf("expected number after -")
 		}
 		lhs = UnaryOpNode{
 			Inner: inner,
 			Op:    *thisToken.Op,
 		}
 	case thisToken.Op != nil && *thisToken.Op == OpOpenParen:
-		// parens are the worst
-		// we're doing a bad job here
-		// read until we get a close paren
 		i++
-		j := i
-		closeNeeded := 1
-		for j < len(tokens) {
-			if tokens[j].Op != nil && *tokens[j].Op == OpOpenParen {
-				closeNeeded++
-			}
-			if tokens[j].Op != nil && *tokens[j].Op == OpCloseParen {
-				closeNeeded--
-				if closeNeeded == 0 {
-					break
-				}
-			}
-			j++
-		}
-		inner, _, err := Parse(tokens[i:j])
+		lhs, i, err = parseParenExpr(i, tokens)
 		if err != nil {
-			return lhs, 0, err
-		}
-		i = j
-		lhs = ParenWrappedNode{
-			Inner: inner,
+			return lhs, err
 		}
 	default:
-		return lhs, 0, fmt.Errorf("bad token for starting production")
+		return lhs, fmt.Errorf("bad token for starting production")
 	}
 	i++
 	if i >= len(tokens) {
-		return lhs, i - 1, nil
+		return lhs, nil
 	}
 	nextToken := tokens[i]
 	// based on our productions, next token has to be a binop.
 	if nextToken.Op == nil {
-		return tree, i, fmt.Errorf("eq middle token %v was not an op", nextToken)
+		return tree, fmt.Errorf("eq middle token %v was not an op", nextToken)
 	}
 	newTree := BinaryOpNode{
 		LHS: lhs,
@@ -196,15 +209,42 @@ func Parse(tokens []Token) (tree Node, read int, err error) {
 		RHS: nil,
 	}
 	i++
-	right, adv, err := Parse(tokens[i:])
+	right, err := Parse(tokens[i:])
 	if err != nil {
-		return newTree, i + adv, err
+		return newTree, err
 	}
 	newTree.RHS = right
-	return newTree, i + adv, nil
+	return newTree, nil
 }
 
-func ParseString(s string) (Node, int, error) {
+// parens are the worst
+// we're doing a bad job here
+// read until we get a close paren
+func parseParenExpr(j int, tokens []Token) (node Node, newI int, err error) {
+	startJ := j
+	closeNeeded := 1
+	for j < len(tokens) {
+		if tokens[j].Op != nil && *tokens[j].Op == OpOpenParen {
+			closeNeeded++
+		}
+		if tokens[j].Op != nil && *tokens[j].Op == OpCloseParen {
+			closeNeeded--
+			if closeNeeded == 0 {
+				break
+			}
+		}
+		j++
+	}
+	inner, err := Parse(tokens[startJ:j])
+	if err != nil {
+		return nil, 0, err
+	}
+	return ParenWrappedNode{
+		Inner: inner,
+	}, j, nil
+}
+
+func ParseString(s string) (Node, error) {
 	tks := []Token{}
 	for _, c := range s {
 		if c == ' ' {
@@ -243,6 +283,8 @@ func ParseString(s string) (Node, int, error) {
 			tks = append(tks, oTk(OpMultiply))
 		case '/':
 			tks = append(tks, oTk(OpDivide))
+		case '√':
+			tks = append(tks, oTk(OpSquareRoot))
 		}
 		if len(tks) > 1 {
 			if tks[len(tks)-1].Number != nil &&
@@ -263,6 +305,9 @@ func ParseString(s string) (Node, int, error) {
 //   ( eq )
 //   unop eq
 //   numeral
+// binop = - | + | * | /
+// unop = - | √
+//
 // start = eq
 
 func iTk(i int64) Token {
