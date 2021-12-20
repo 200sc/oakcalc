@@ -3,6 +3,7 @@ package calc
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/200sc/oakcalc/internal/arith"
@@ -40,11 +41,13 @@ func Scene() scene.Scene {
 					{Number: i64p(8)},
 					{Number: i64p(9)},
 					{Op: opP(arith.OpDivide)},
+					{Op: opP(arith.OpOpenParen)},
 				}, {
 					{Number: i64p(4)},
 					{Number: i64p(5)},
 					{Number: i64p(6)},
 					{Op: opP(arith.OpMultiply)},
+					{Op: opP(arith.OpCloseParen)},
 				}, {
 					{Number: i64p(1)},
 					{Number: i64p(2)},
@@ -68,6 +71,10 @@ func Scene() scene.Scene {
 			const yStart = 200
 			var x float64 = xStart
 			var y float64 = yStart
+			btnFnt, _ := render.DefaultFont().RegenerateWith(func(fg render.FontGenerator) render.FontGenerator {
+				fg.Size = 25
+				return fg
+			})
 			for _, tokenRow := range tokens {
 				for _, token := range tokenRow {
 					token := token
@@ -84,6 +91,8 @@ func Scene() scene.Scene {
 					})
 					btn.New(
 						btn.Text(s),
+						btn.TxtOff(12, 8),
+						btn.Font(btnFnt),
 						btn.Pos(x, y),
 						btn.Width(width),
 						btn.Height(height),
@@ -162,10 +171,11 @@ func (disp *arithmeticDisplay) Add(t arith.Token) {
 				Number: i64p(0),
 			})
 		}
-		tree, err := arith.Parse(disp.currentOperation)
+		tree, _, err := arith.Parse(disp.currentOperation)
+		// fmt.Println(pretty)
 		if err == nil {
-			pretty := tree.Pretty()
-			result := tree.Eval()
+			result := arith.Eval(tree)
+			pretty := arith.Pretty(tree)
 			fmt.Println(pretty)
 			fmt.Println(result)
 			disp.AddToHistory(pretty)
@@ -178,13 +188,16 @@ func (disp *arithmeticDisplay) Add(t arith.Token) {
 		return
 	}
 	defer func() {
-		tree, err := arith.Parse(disp.currentOperation)
-		if err == nil {
-			pretty := tree.Pretty()
-			disp.current.SetString(pretty)
-		} else {
-			fmt.Println(err)
+		strs := make([]string, len(disp.currentOperation))
+		for i, t := range disp.currentOperation {
+			if t.Op != nil {
+				strs[i] = string(*t.Op)
+			} else {
+				strs[i] = strconv.FormatInt(*t.Number, 10)
+			}
 		}
+		pretty := strings.Join(strs, " ")
+		disp.current.SetString(pretty)
 	}()
 	if t.Op != nil && *t.Op == arith.OpBackspace {
 		if len(disp.currentOperation) != 0 {
