@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"strconv"
+	"time"
 
 	oak "github.com/oakmound/oak/v3"
 	"github.com/oakmound/oak/v3/alg/floatgeom"
@@ -18,8 +19,12 @@ import (
 )
 
 type TitleBar struct {
-	draggingWindow   bool
-	draggingStartPos floatgeom.Point2
+	lastPressAt        time.Time
+	draggingStartPos   floatgeom.Point2
+	draggingWindow     bool
+	buttons            map[Button]btn.Btn
+	startingDimensions intgeom.Point2
+	maximized          bool
 }
 
 type Constructor struct {
@@ -34,8 +39,9 @@ type Constructor struct {
 	TitleXOffset   int
 	TitleTextColor color.Color
 
-	Buttons     []Button
-	ButtonWidth float64
+	Buttons              []Button
+	ButtonWidth          float64
+	DoubleClickThreshold time.Duration
 }
 
 type Button uint8
@@ -56,10 +62,11 @@ var DefaultConstructor = Constructor{
 		ButtonMaximize,
 		ButtonClose,
 	},
-	ButtonWidth:    32,
-	TitleFontSize:  17,
-	TitleXOffset:   10,
-	TitleTextColor: color.RGBA{255, 255, 255, 255},
+	ButtonWidth:          32,
+	TitleFontSize:        17,
+	TitleXOffset:         10,
+	TitleTextColor:       color.RGBA{255, 255, 255, 255},
+	DoubleClickThreshold: 200 * time.Millisecond,
 }
 
 // New constructs a new TitleBar
@@ -89,6 +96,12 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 
 	totalButtonsSize := construct.ButtonWidth * float64(len(construct.Buttons))
 	dragBarWidth -= totalButtonsSize
+
+	hdr := &TitleBar{
+		lastPressAt:        time.Now(),
+		buttons:            make(map[Button]btn.Btn),
+		startingDimensions: intgeom.Point2{ctx.Window.Width(), ctx.Window.Height()},
+	}
 
 	for i, button := range construct.Buttons {
 		i := i
@@ -132,26 +145,14 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 				"onpress-revert": render.SpriteFromShape(normalizeIcon, int(construct.ButtonWidth), int(construct.Height), color.RGBA{255, 255, 255, 255}, construct.MouseDownColor),
 			})
 			txt = ""
+
 			clickBinding = func(c event.CID, e *mouse.Event) int {
 				b, _ := ctx.CallerMap.GetEntity(c).(btn.Btn)
-				if sfx, _ := b.Metadata("switch-suffix"); sfx != "" {
-					ctx.Window.(*oak.Window).Normalize()
-					b.SetMetadata("switch-suffix", "")
-					if sw, ok := b.GetRenderable().(*render.Switch); ok {
-						sw.Set("nohover")
-					}
-				} else {
-					ctx.Window.(*oak.Window).Maximize()
-					b.SetMetadata("switch-suffix", "-revert")
-					if sw, ok := b.GetRenderable().(*render.Switch); ok {
-						sw.Set("nohover-revert")
-					}
-				}
+				hdr.maximized = toggleMaximize(ctx, b)
 				return 0
 			}
 		}
-		_ = button
-		btn.New(
+		hdr.buttons[button] = btn.New(
 			btn.Text(txt),
 			btn.Pos(dragBarWidth+float64(i)*construct.ButtonWidth, 0),
 			btn.Renderable(r),
@@ -186,20 +187,11 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 			btn.Binding(oak.WindowSizeChange, oak.SizeChangeEvent(func(c event.CID, pt intgeom.Point2) int {
 				b, _ := ctx.CallerMap.GetEntity(c).(*btn.Box)
 				b.SetPos(float64(pt.X())-totalButtonsSize+float64(i)*construct.ButtonWidth, 0)
-				// TODO: if you drag the window off of being maximized (TODO: should you be able to do that? TODO: if you should the hitbox needs to be updated),
-				//       then the maximize button should revert from normalize to maximize again
-				// if sfx, _ := b.Metadata("switch-suffix"); sfx != "" && button == ButtonMaximize && {
-				// 	b.SetMetadata("switch-suffix", "")
-				// 	if sw, ok := b.GetRenderable().(*render.Switch); ok {
-				// 		sw.Set("nohover")
-				// 	}
-				// }
 				return 0
 			})),
 		)
 	}
 
-	hdr := &TitleBar{}
 	btn.New(
 		btn.Font(font),
 		btn.Text(construct.Title),
@@ -209,6 +201,15 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 		btn.Height(construct.Height),
 		btn.Color(construct.Color),
 		btn.Binding(mouse.PressOn, func(_ event.CID, ev interface{}) int {
+			if time.Since(hdr.lastPressAt) < construct.DoubleClickThreshold {
+				if mxbtn, ok := hdr.buttons[ButtonMaximize]; ok {
+					hdr.maximized = toggleMaximize(ctx, mxbtn)
+				}
+				// if this is not set, dragging can persist after the window shrinks
+				hdr.draggingWindow = false
+				return 0
+			}
+			hdr.lastPressAt = time.Now()
 			hdr.draggingWindow = true
 			x, y, _ := oak.GetCursorPosition()
 			hdr.draggingStartPos = floatgeom.Point2{float64(x), float64(y)}
@@ -232,7 +233,17 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 				newX, newY, _ := ctx.Window.(*oak.Window).GetDesktopPosition()
 				newX += delta.X()
 				newY += delta.Y()
+				if hdr.maximized {
+					if mxbtn, ok := hdr.buttons[ButtonMaximize]; ok {
+						hdr.maximized = toggleMaximize(ctx, mxbtn)
+					}
+				}
 				ctx.Window.MoveWindow(int(newX), int(newY), screenWidth, screenHeight)
+				if !floatgeom.NewRect2WH(0, 0, float64(screenWidth), float64(screenHeight)).Contains(hdr.draggingStartPos) {
+					hdr.draggingStartPos = floatgeom.Point2{
+						float64(screenWidth) / 2, 16,
+					}
+				}
 			}
 			return 0
 		}),
@@ -245,9 +256,11 @@ func New(ctx *scene.Context, opts ...Option) *TitleBar {
 		btn.Binding(oak.WindowSizeChange, oak.SizeChangeEvent(func(c event.CID, pt intgeom.Point2) int {
 			ctx.Window.(*oak.Window).UpdateViewSize(pt.X(), pt.Y())
 			b, _ := ctx.CallerMap.GetEntity(c).(*btn.TextBox)
+			newW := float64(pt.X()) - totalButtonsSize
 			b.Box.R.Undraw()
-			b.Box.R = render.NewColorBox(int(float64(pt.X())-totalButtonsSize), int(construct.Height), construct.Color)
-			render.Draw(b.Box.R, construct.Layers...)
+			b.Box.R = render.NewColorBox(int(newW), int(construct.Height), construct.Color)
+			ctx.DrawStack.Draw(b.Box.R, construct.Layers...)
+			ctx.MouseTree.UpdateSpace(0, 0, newW, construct.Height, b.Box.Space)
 			return 0
 		})),
 	)
@@ -292,4 +305,21 @@ func squarePercent(minPerc, maxPerc float64) shape.In {
 				y == int(float64(size)*maxPerc)
 		},
 	)
+}
+
+func toggleMaximize(ctx *scene.Context, b btn.Btn) bool {
+	if sfx, _ := b.Metadata("switch-suffix"); sfx != "" {
+		ctx.Window.(*oak.Window).Normalize()
+		b.SetMetadata("switch-suffix", "")
+		if sw, ok := b.GetRenderable().(*render.Switch); ok {
+			sw.Set("nohover")
+		}
+		return false
+	}
+	ctx.Window.(*oak.Window).Maximize()
+	b.SetMetadata("switch-suffix", "-revert")
+	if sw, ok := b.GetRenderable().(*render.Switch); ok {
+		sw.Set("nohover-revert")
+	}
+	return true
 }

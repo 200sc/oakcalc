@@ -2,7 +2,10 @@
 
 package titlebar
 
-import "image/color"
+import (
+	"image/color"
+	"time"
+)
 
 type Option func(Constructor) Constructor
 
@@ -79,6 +82,13 @@ func WithButtons(v []Button) Option {
 func WithButtonWidth(v float64) Option {
 	return func(s Constructor) Constructor {
 		s.ButtonWidth = v
+		return s
+	}
+}
+
+func WithDoubleClickThreshold(v time.Duration) Option {
+	return func(s Constructor) Constructor {
+		s.DoubleClickThreshold = v
 		return s
 	}
 }
