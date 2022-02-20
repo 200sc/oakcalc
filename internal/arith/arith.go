@@ -169,7 +169,6 @@ func Parse(tokens []Token) (tree Node, err error) {
 		// if we call parse, how do we stop parse from consuming the entire rest of the tree?
 		var inner Node
 		switch {
-		// TODO -()
 		case nextToken.Op != nil && *nextToken.Op == OpOpenParen:
 			i++
 			inner, i, err = parseParenExpr(i, tokens)
